@@ -1,36 +1,43 @@
-import gradio as gr
+import streamlit as st
 from transformers import pipeline
 
-# Use minimal models known to work on CPU Spaces
-stt = pipeline("automatic-speech-recognition", model="facebook/wav2vec2-base-960h")
-text_gen = pipeline("text-generation", model="sshleifer/tiny-gpt2")
+st.set_page_config(page_title="AI Sloka Tutor", layout="centered")
 
-def ai_sloka_tutor(audio):
-    try:
-        # Step 1: Transcribe audio
-        result = stt(audio)
-        sloka_text = result.get("text", "").strip()
+st.title("🧘‍♀️ AI Sloka Tutor (Voice to Meaning)")
+st.markdown("Upload a Sanskrit sloka audio file (.wav) to get a simplified English explanation.")
 
-        if not sloka_text:
-            return "⚠️ No recognizable speech. Please try again."
+# Load models
+@st.cache_resource
+def load_models():
+    stt_model = pipeline("automatic-speech-recognition", model="facebook/wav2vec2-base-960h")
+    text_model = pipeline("text-generation", model="sshleifer/tiny-gpt2")
+    return stt_model, text_model
 
-        # Step 2: Generate simplified meaning
-        prompt = f"Translate and explain this Sanskrit sloka: {sloka_text}"
-        ai_output = text_gen(prompt, max_length=50, num_return_sequences=1)[0]["generated_text"]
-        meaning = ai_output.replace(prompt, "").strip()
+stt, generator = load_models()
 
-        return f"🎧 Sloka: {sloka_text}\n\n🧠 AI Meaning: {meaning or 'No meaning generated.'}"
+# File uploader
+audio_file = st.file_uploader("🎙️ Upload your sloka audio (WAV format only)", type=["wav"])
 
-    except Exception as error:
-        return f"❌ Runtime error: {str(error)}"
+if audio_file:
+    st.audio(audio_file, format="audio/wav")
 
-# Gradio Interface
-interface = gr.Interface(
-    fn=ai_sloka_tutor,
-    inputs=gr.Audio(source="upload", type="filepath", label="Upload WAV file"),
-    outputs="text",
-    title="AI Sloka Tutor",
-    description="Upload a Sanskrit sloka audio file to receive a simplified English explanation."
-)
+    with st.spinner("Transcribing and analyzing..."):
+        try:
+            transcription = stt(audio_file)
+            sloka_text = transcription.get("text", "").strip()
 
-interface.launch()
+            if not sloka_text:
+                st.warning("No recognizable speech found. Try again.")
+            else:
+                st.subheader("📜 Sloka Transcript")
+                st.success(sloka_text)
+
+                prompt = f"Explain this Sanskrit sloka in simple English: {sloka_text}"
+                meaning = generator(prompt, max_length=60, do_sample=True)[0]["generated_text"]
+                meaning = meaning.replace(prompt, "").strip()
+
+                st.subheader("🧠 AI-Generated Meaning")
+                st.info(meaning or "No meaning generated.")
+
+        except Exception as e:
+            st.error(f"❌ Error: {e}")
